@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Módulo de Normalización de Variables Mineras v2</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- SheetJS para leer Excel/CSV -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght=300;400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #0f172a; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col">
+
+  <!-- Header -->
+  <header class="bg-slate-950 border-b border-slate-800 shadow-xl sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+      <div class="flex items-center gap-3">
+        <div class="p-2 bg-amber-500 rounded-lg text-slate-950 font-black text-xl">Ln</div>
+        <div>
+          <h1 class="text-xl font-bold text-white">NORMALIZACIÓN ESTADÍSTICA</h1>
+          <p class="text-xs text-amber-500 font-mono">TRANSFORMACIÓN LOGARÍTMICA NATURAL</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-grow max-w-7xl mx-auto px-4 py-8 w-full space-y-8">
+    
+    <!-- 1. Carga de Archivos -->
+    <section class="bg-slate-950 border border-slate-800 rounded-xl p-6 shadow-lg">
+      <h2 class="text-lg font-bold text-white mb-4 border-b border-slate-800 pb-2 flex items-center gap-2">
+        <span class="w-2.5 h-6 bg-blue-500 rounded-sm"></span> 1. Cargar Archivo de Datos (Assay / Leyes)
+      </h2>
+      <div class="flex flex-col md:flex-row gap-4 items-center">
+        <div class="w-full md:w-1/2">
+          <label class="block text-sm font-medium text-slate-400 mb-2">Sube tu archivo .csv, .txt o .xlsx</label>
+          <input type="file" id="dataFile" accept=".csv, .txt, .xlsx, .xls" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-bold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer">
+        </div>
+        <div class="w-full md:w-1/2 text-xs text-slate-500">
+          <p>El sistema leerá las columnas automáticamente. Podrás seleccionar qué variable (ej. Oro, Cobre, Arsénico) deseas normalizar aplicando <strong>Logaritmo Natural (ln)</strong>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Controles de Normalización -->
+    <section id="controlSection" class="hidden bg-slate-950 border border-slate-800 rounded-xl p-6 shadow-lg">
+      <h2 class="text-lg font-bold text-white mb-4 border-b border-slate-800 pb-2 flex items-center gap-2">
+        <span class="w-2.5 h-6 bg-amber-500 rounded-sm"></span> 2. Selección de Variable y Filtro de Población
+      </h2>
+      
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
+        <div class="w-full">
+          <label class="block text-sm font-medium text-slate-400 mb-2">Variable a Analizar:</label>
+          <select id="columnSelect" class="w-full bg-slate-900 border border-slate-700 text-white rounded-lg p-2.5 focus:border-amber-500 focus:outline-none"></select>
+        </div>
+        
+        <div class="w-full">
+          <label class="block text-sm font-medium text-slate-400 mb-2">Método:</label>
+          <select id="normMethod" class="w-full bg-slate-900 border border-slate-700 text-white rounded-lg p-2.5 focus:border-amber-500 focus:outline-none">
+            <option value="ln">Logaritmo Natural ( Ln(x) )</option>
+            <option value="log10">Logaritmo Base 10 ( Log10(x) )</option>
+          </select>
+        </div>
+
+        <div class="w-full">
+          <label class="block text-sm font-medium text-slate-400 mb-2 text-rose-400">Excluir valores menores a:</label>
+          <input type="number" id="cutoffValue" value="0.01" step="0.001" class="w-full bg-slate-900 border border-rose-900/50 text-white rounded-lg p-2.5 focus:border-rose-500 focus:outline-none">
+        </div>
+
+        <div class="w-full">
+          <button onclick="processVariable()" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 px-4 rounded-lg transition-colors">
+            Generar Distribuciones
+          </button>
+        </div>
+      </div>
+      
+      <div class="mt-4 p-3 bg-slate-900 rounded-lg border border-slate-800 text-xs text-slate-400">
+        <strong>Geostadística:</strong> Si observas una distribución bimodal (dos campanas), significa que estás graficando el "estéril/ruido" junto con la "mineralización". Usa el filtro de exclusión (Cut-off o Límite de detección) para remover los valores cercanos a cero y obtener una campana de Gauss limpia de tu dominio mineralizado.
+      </div>
+    </section>
+
+    <!-- 3. Gráficos Comparativos -->
+    <section id="chartSection" class="hidden grid grid-cols-1 lg:grid-cols-2 gap-6">
+      
+      <!-- Distribución Original -->
+      <div class="bg-slate-950 border border-slate-800 rounded-xl p-5">
+        <h3 class="text-sm font-bold text-white uppercase mb-1">Distribución Original (Filtrada)</h3>
+        <p class="text-xs text-slate-500 mb-4">Datos crudos sin transformación</p>
+        <div class="h-64 relative">
+          <canvas id="chartOriginal"></canvas>
+        </div>
+        <div id="statsOriginal" class="mt-4 grid grid-cols-3 gap-2 text-center text-xs font-mono bg-slate-900 p-2 rounded-lg border border-slate-800 text-slate-300"></div>
+      </div>
+
+      <!-- Distribución Normalizada -->
+      <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 border-t-4 border-t-amber-500">
+        <h3 class="text-sm font-bold text-white uppercase mb-1">Distribución Normalizada</h3>
+        <p class="text-xs text-slate-500 mb-4">Campana de Gauss de la Población Mineralizada</p>
+        <div class="h-64 relative">
+          <canvas id="chartNormalized"></canvas>
+        </div>
+        <div id="statsNormalized" class="mt-4 grid grid-cols-3 gap-2 text-center text-xs font-mono bg-slate-900 p-2 rounded-lg border border-slate-800 text-amber-400"></div>
+      </div>
+
+    </section>
+  </main>
+
+  <script>
+    let globalData = [];
+    let chartOrigInstance = null;
+    let chartNormInstance = null;
+
+    document.getElementById('dataFile').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if(!file) return;
+      const reader = new FileReader();
+      
+      reader.onload = function(evt) {
+        const data = evt.target.result;
+        const workbook = XLSX.read(data, {type: 'binary'});
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const json = XLSX.utils.sheet_to_json(worksheet, {defval: null});
+        globalData = json;
+
+        if(json.length > 0) {
+          populateColumns(json[0]);
+          document.getElementById('controlSection').classList.remove('hidden');
+        }
+      };
+      reader.readAsBinaryString(file);
+    });
+
+    function populateColumns(firstRow) {
+      const select = document.getElementById('columnSelect');
+      select.innerHTML = '';
+      for(let key in firstRow) {
+        let option = document.createElement('option');
+        option.value = key;
+        option.text = key;
+        select.appendChild(option);
+      }
+    }
+
+    function processVariable() {
+      const col = document.getElementById('columnSelect').value;
+      const method = document.getElementById('normMethod').value;
+      const cutoff = parseFloat(document.getElementById('cutoffValue').value);
+
+      if(!col) return;
+
+      let originalValues = [];
+      let normalizedValues = [];
+
+      globalData.forEach(row => {
+        let val = parseFloat(row[col]);
+        // Filtrar valores menores o iguales al Cut-off indicado por el usuario
+        if(!isNaN(val) && val > cutoff) {
+          originalValues.push(val);
+          
+          if(method === 'ln') {
+             normalizedValues.push(Math.log(val));
+          } else {
+             normalizedValues.push(Math.log10(val));
+          }
+        }
+      });
+
+      if(originalValues.length === 0) {
+        alert("No hay datos suficientes tras aplicar el filtro de exclusión. Intenta bajar el valor.");
+        return;
+      }
+
+      document.getElementById('chartSection').classList.remove('hidden');
+
+      const origHist = calculateHistogram(originalValues, 25);
+      const normHist = calculateHistogram(normalizedValues, 25);
+
+      renderChart('chartOriginal', chartOrigInstance, origHist, 'Valores Crudos', '#3b82f6', function(inst) { chartOrigInstance = inst; });
+      renderChart('chartNormalized', chartNormInstance, normHist, method === 'ln' ? 'Valores ln(x)' : 'Valores log10(x)', '#f59e0b', function(inst) { chartNormInstance = inst; });
+
+      renderStats('statsOriginal', originalValues);
+      renderStats('statsNormalized', normalizedValues);
+    }
+
+    function calculateHistogram(data, numBins) {
+      let min = Math.min(...data);
+      let max = Math.max(...data);
+      if(min === max) max = min + 1;
+      
+      let step = (max - min) / numBins;
+      let bins = new Array(numBins).fill(0);
+      let labels = [];
+
+      for(let i=0; i<numBins; i++) {
+        labels.push((min + i*step).toFixed(2));
+      }
+
+      data.forEach(val => {
+        let idx = Math.floor((val - min) / step);
+        if(idx >= numBins) idx = numBins - 1;
+        bins[idx]++;
+      });
+
+      return { labels, data: bins };
+    }
+
+    function renderChart(canvasId, chartInstance, histData, labelX, color, saveInstanceFn) {
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      if(chartInstance) chartInstance.destroy();
+
+      const newChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: histData.labels,
+          datasets: [{
+            label: 'Frecuencia',
+            data: histData.data,
+            backgroundColor: color,
+            borderWidth: 1,
+            borderColor: 'rgba(0,0,0,0.2)',
+            barPercentage: 1.0,
+            categoryPercentage: 1.0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: { 
+              title: { display: true, text: labelX, color: '#94a3b8' },
+              ticks: { color: '#64748b', maxRotation: 45, minRotation: 45 },
+              grid: { display: false }
+            },
+            y: {
+              title: { display: true, text: 'Conteo', color: '#94a3b8' },
+              ticks: { color: '#64748b' },
+              grid: { color: '#1e293b' }
+            }
+          },
+          plugins: { legend: { display: false } }
+        }
+      });
+      saveInstanceFn(newChart);
+    }
+
+    function renderStats(divId, data) {
+      let min = Math.min(...data);
+      let max = Math.max(...data);
+      let sum = data.reduce((a, b) => a + b, 0);
+      let mean = sum / data.length;
+
+      document.getElementById(divId).innerHTML = `
+        <div><span class="block text-slate-500 uppercase">Mín</span>${min.toFixed(3)}</div>
+        <div><span class="block text-slate-500 uppercase">Media</span>${mean.toFixed(3)}</div>
+        <div><span class="block text-slate-500 uppercase">Máx</span>${max.toFixed(3)}</div>
+      `;
+    }
+  </script>
+</body>
+</html>
